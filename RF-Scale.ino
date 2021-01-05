@@ -4,7 +4,6 @@
 #include <RF24.h>
 #include <printf.h>
 #include <HX711.h>
-#include <SoftwareSerial.h>
 
 #define SDA_PORT PORTC
 #define SDA_PIN 4 //4 within Port C
@@ -48,11 +47,6 @@ uint8_t i2cBuffer[bufferLen];
 
 const int PIN_HX711_CLK = 2;
 const int PIN_HX711_DAT = 3;
-const int PIN_BT_RX = 5;
-const int PIN_BT_TX = 6;
-
-/** Bluetooth (HXC-05) **/
-SoftwareSerial bluetooth(PIN_BT_RX, PIN_BT_TX); //RX, TX
 
 /** RF (NRF24L01) **/
 RF24 radio(7, 8); //CE, CSN
@@ -67,7 +61,6 @@ float scaleValue = 0;
 float scaleValueLast = 0;
 long zero_factor;
 boolean calibrationMode = false;
-boolean streamData = false;
 
 /** Display **/
 int prevVals[6] = { };
@@ -107,10 +100,6 @@ void setup() {
   Serial.println("[battery] init");
   printBatteryData();
   
-  Serial.println("[bluetooth] init");
-  bluetooth.begin(9600);
-  bluetooth.println("[bluetooth] ready");
-  
   Serial.println("[radio] init");
   radio.begin();
   radio.openWritingPipe(addresses[1]);
@@ -126,7 +115,6 @@ void setup() {
 
 void loop() {
   handleRadio();
-  handleBluetoothCommands();
   
   if (Serial.available() > 0) {
    handleSerialCommands();
@@ -142,7 +130,6 @@ void loop() {
         scaleValue = scale.get_units(SCALE_SAMPLES);
         updateWeight();
         handleResetSequence();
-        handleBTData();
       } else {
         if (battAnimationState == 0) updateDisplay(11, 15, 15, 15, 15, 15);
         if (battAnimationState == 1) updateDisplay(10, 11, 15, 15, 15, 15);
@@ -375,35 +362,6 @@ void handleRadio() {
   radio.stopListening();
 }
 
-void handleBTData() {
-  if (!calibrationMode) {
-    if (streamData) {
-      bluetooth.print("value: ");
-      bluetooth.println(scaleValue);
-    }
-  }
-}
-
-void handleBluetoothCommands() {
-  if (bluetooth.available()) {
-    String command = bluetooth.readStringUntil('\n');
-    bluetooth.read();
-    bluetooth.print(">");
-    bluetooth.println(command);
-    
-    if (command == "reset") {
-      bluetooth.println("reset");
-      reset = true;
-      delay(100);
-    } else if (command == "read") {
-      bluetooth.print("read: ");
-      bluetooth.println(scaleValue);
-    } else if (command == "stream") {
-      streamData = true;
-    }
-  }
-}
-
 void handleSerialCommands() {
   if (calibrationMode) {
     char incomingCharacter = Serial.read();
@@ -564,7 +522,7 @@ void updateDisplay(int d1, int d2, int d3, int d4, int d5, int d6) {
   sendDisplayRF(d1, d2, d3, d4, d5, d6, 0);
 }
 boolean sendDisplayRF(int d1, int d2, int d3, int d4, int d5, int d6, int attempts) {
-  int values[] = {d1, d2, d3, d4, d5, d6};
+  float values[] = {d1, d2, d3, d4, d5, d6, scaleValue};
 
   if (!(values[0] == prevVals[0] && 
         values[1] == prevVals[1] && 
